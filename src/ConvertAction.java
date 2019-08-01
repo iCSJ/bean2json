@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
+import com.intellij.psi.PsiArrayType;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiClassType;
 import com.intellij.psi.PsiElement;
@@ -99,18 +100,21 @@ public class ConvertAction extends AnAction {
         }
 
         for (int i = psiClassList.size() - 1; i >= 0; i--) {
-            PsiField[] psiFields = psiClassList.get(i).getFields();
+            PsiClass psiClazz = psiClassList.get(i);
+            PsiField[] psiFields = psiClazz.getFields();
 
             for (int idx = 0; idx < psiFields.length; ++idx) {
                 PsiField psiField = psiFields[idx];
-                outputMap.put(psiField.getName(), this.getObjectForField(psiField, project));
+                if (psiField.getModifierList().hasModifierProperty("static")) {
+                    continue;
+                }
+                outputMap.put(psiField.getName(), this.getObjectForField(psiField.getType(), psiClazz, project));
             }
         }
         return outputMap;
     }
 
-    private Object getObjectForField(PsiField psiField, Project project) {
-        PsiType type = psiField.getType();
+    private Object getObjectForField(PsiType type, PsiClass psiClass, Project project) {
         if (type instanceof PsiPrimitiveType) {
             if (type.equals(PsiType.INT)) {
                 return 0;
@@ -130,32 +134,35 @@ public class ConvertAction extends AnAction {
                 return type.equals(PsiType.SHORT) ? Short.valueOf("0") : type.getPresentableText();
             }
         } else {
+            if (type.getClass().isAssignableFrom(PsiArrayType.class)) {
+                List<Object> list = new ArrayList();
+                list.add(getObjectForField(((PsiArrayType) type).getComponentType(), psiClass, project));
+                return list;
+            }
             String typeName = type.getPresentableText();
-            if (!typeName.equals("Integer") && !typeName.equals("Long")) {
-                if (!typeName.equals("Double") && !typeName.equals("Float")) {
-                    if (typeName.equals("Boolean")) {
-                        return Boolean.TRUE;
-                    } else if (typeName.equals("Byte")) {
-                        return Byte.valueOf("1");
-                    } else if (typeName.equals("String")) {
-                        return "";
-                    } else if (typeName.equals("Date")) {
-                        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
-                    } else if (typeName.equals("BigDecimal")) {
-                        return 0.00;
-                    } else if (typeName.contains("List") || typeName.contains("Set")) {
-                        return this.handleList(type, project, psiField.getContainingClass());
-                    } else if (typeName.contains("Map")) {
-                        return new Object();
-                    } else {
-                        PsiClass fieldClass = this.detectCorrectClassByName(typeName, psiField.getContainingClass(), project);
-                        return fieldClass != null ? this.generateMap(fieldClass, project) : typeName;
-                    }
-                } else {
-                    return 0.0F;
-                }
-            } else {
+            if (typeName.equals("Integer") || typeName.equals("Long")) {
                 return 0;
+            }
+            if (typeName.equals("Double") || typeName.equals("Float")) {
+                return 0.0F;
+            }
+            if (typeName.equals("Boolean")) {
+                return Boolean.TRUE;
+            } else if (typeName.equals("Byte")) {
+                return Byte.valueOf("1");
+            } else if (typeName.equals("String")) {
+                return "";
+            } else if (typeName.equals("Date")) {
+                return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+            } else if (typeName.equals("BigDecimal")) {
+                return 0.00;
+            } else if (typeName.contains("List") || typeName.contains("Set")) {
+                return this.handleList(type, project, psiClass);
+            } else if (typeName.contains("Map")) {
+                return new Object();
+            } else {
+                PsiClass fieldClass = this.detectCorrectClassByName(typeName, psiClass, project);
+                return fieldClass != null ? this.generateMap(fieldClass, project) : typeName;
             }
         }
     }
@@ -175,16 +182,11 @@ public class ConvertAction extends AnAction {
                 PsiClass targetClass = this.detectCorrectClassByName(subTypeName, containingClass, project);
                 if (targetClass != null) {
                     list.add(this.generateMap(targetClass, project));
-                } else if (subTypeName.equals("String")) {
-                    list.add("");
-                } else if (subTypeName.equals("Date")) {
-                    list.add(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
                 } else {
-                    list.add(subTypeName);
+                    list.add(getObjectForField(subType, containingClass, project));
                 }
             }
         }
-
         return list;
     }
 
@@ -213,7 +215,6 @@ public class ConvertAction extends AnAction {
                     return targetClass;
                 }
             }
-
             return null;
         }
     }
