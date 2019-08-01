@@ -14,7 +14,7 @@
     ]]></description>
 
   <change-notes><![CDATA[
-      1.0 支持简单类生成JSON 可处理List泛型 以及List嵌套.<br>
+      1.0 支持简单类生成JSON 可处理列表泛型、列表嵌套、数组,排除类静态成员<br>
       <em></em>
     ]]>
   </change-notes>
